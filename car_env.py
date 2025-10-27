@@ -89,14 +89,34 @@ class CarEnvironment:
     def _random_obstacles(self, count: int):
         """在道路范围内随机生成障碍，避开起点附近"""
         obstacles = []
-        tries_per_obs = 20
+        tries_per_obs = 30
+        lane_half_h = 50   # 与 render 中车道高度一致（100）
+        margin = 3         # 与车道边缘/障碍边缘的安全距离
+
+        road_top = max(0, int(self.road_y - lane_half_h))
+        road_bottom = min(self.height, int(self.road_y + lane_half_h))
+        road_left = int(self.road_left)
+        road_right = int(self.road_right)
+
+
         for _ in range(count):
             placed = False
             for _ in range(tries_per_obs):
+                
                 w = random.randint(24, 40)
                 h = random.randint(24, 40)
-                x = random.uniform(self.road_left + 20, self.road_right - 20 - w)
-                y = random.uniform(60, self.height - 60)
+
+                
+                # 让整个障碍矩形都在车道内
+                x_min = road_left + margin
+                x_max = road_right - margin - w
+                y_min = road_top + margin
+                y_max = road_bottom - margin - h
+                if x_min >= x_max or y_min >= y_max:
+                    break  # 车道太窄，无法放置
+
+                x = random.uniform(x_min, x_max)  # 顶点坐标（与渲染一致）
+                y = random.uniform(y_min, y_max)
 
                 # 避开起点
                 if abs(x - self.car_x) < 80 and abs(y - self.car_y) < 80:
@@ -105,10 +125,11 @@ class CarEnvironment:
                 placed = True
                 break
             if not placed:
-                # 兜底：若多次尝试失败，放到车道中部
-                obstacles.append({'x': (self.road_left + self.road_right) / 2,
-                                  'y': self.road_y + random.randint(-100, 100),
-                                  'width': 30, 'height': 30})
+                # 兜底：放在车道中心附近
+                cx = (road_left + road_right) / 2
+                cy = (road_top + road_bottom) / 2
+                obstacles.append({'x': cx - 15, 'y': cy - 15, 'width': 30, 'height': 30})
+
         return obstacles
 
     def get_state(self) -> np.ndarray:
