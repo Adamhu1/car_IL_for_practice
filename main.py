@@ -25,7 +25,7 @@ def main():
     args = parser.parse_args()
     
     # 创建环境
-    env = CarEnvironment()
+    env = CarEnvironment(randomize=True, seed=42)
     
     try:
         if args.mode == 'collect':

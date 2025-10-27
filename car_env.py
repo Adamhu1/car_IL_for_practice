@@ -2,12 +2,12 @@ import pygame
 import numpy as np
 import cv2
 import random  # 新增
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 class CarEnvironment:
     def __init__(self, render_mode="human",
                  randomize: bool = True,        # 重置时是否随机
-                 seed: int | None = None,
+                 seed: Optional[int] = None,
                  road_width_range=(260, 520),   # 道路宽度范围
                  road_y_margin=120,             # 道路中心线距离上下边界的最小边距
                  start_x_offset=(40, 120),      # 起点距离左侧车道边的偏移范围
@@ -21,6 +21,18 @@ class CarEnvironment:
         pygame.display.set_caption("Imitation Learning - Self Driving Car")
         self.clock = pygame.time.Clock()
         self.render_mode = render_mode
+
+        # 随机化配置
+        self.randomize = randomize
+        self.road_width_range = road_width_range
+        self.road_y_margin = road_y_margin
+        self.start_x_offset = start_x_offset
+        self.start_y_jitter = start_y_jitter
+        self.start_angle_range = start_angle_range
+        self.obstacle_count_range = obstacle_count_range
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
         
         # 汽车参数
         self.car_x, self.car_y = 100, 300
@@ -47,11 +59,58 @@ class CarEnvironment:
     
     def reset(self) -> np.ndarray:
         """重置环境"""
-        self.car_x, self.car_y = 100, 300
-        self.car_angle = 0
+        if self.randomize:
+            # 随机道路宽度与中心线位置
+            self.road_width = int(random.randint(*self.road_width_range))
+            self.road_y = int(random.randint(self.road_y_margin, self.height - self.road_y_margin))
+            self.road_left = (self.width - self.road_width) // 2
+            self.road_right = self.road_left + self.road_width
+        else:
+            # 使用固定道路参数（与 __init__ 中一致）
+            self.road_width = 400
+            self.road_y = 300
+            self.road_left = 200
+            self.road_right = 600
+
+        # 随机起点姿态（位于车道左侧附近，朝向近似水平）
+        left_safe = self.road_left + max(self.start_x_offset[0], 10)
+        right_safe = self.road_left + min(self.start_x_offset[1], self.road_width - 40)
+        self.car_x = float(random.randint(left_safe, right_safe))
+        self.car_y = float(self.road_y + random.randint(*self.start_y_jitter))
+        self.car_angle = float(random.uniform(*self.start_angle_range))
         self.trajectory = []
+
+        # 障碍物数量与位置
+        count = random.randint(*self.obstacle_count_range) if self.randomize else len(getattr(self, "obstacles", [])) or 2
+        self.obstacles = self._random_obstacles(count)
+
         return self.get_state()
     
+    def _random_obstacles(self, count: int):
+        """在道路范围内随机生成障碍，避开起点附近"""
+        obstacles = []
+        tries_per_obs = 20
+        for _ in range(count):
+            placed = False
+            for _ in range(tries_per_obs):
+                w = random.randint(24, 40)
+                h = random.randint(24, 40)
+                x = random.uniform(self.road_left + 20, self.road_right - 20 - w)
+                y = random.uniform(60, self.height - 60)
+
+                # 避开起点
+                if abs(x - self.car_x) < 80 and abs(y - self.car_y) < 80:
+                    continue
+                obstacles.append({'x': x, 'y': y, 'width': w, 'height': h})
+                placed = True
+                break
+            if not placed:
+                # 兜底：若多次尝试失败，放到车道中部
+                obstacles.append({'x': (self.road_left + self.road_right) / 2,
+                                  'y': self.road_y + random.randint(-100, 100),
+                                  'width': 30, 'height': 30})
+        return obstacles
+
     def get_state(self) -> np.ndarray:
         """获取状态向量"""
         # 计算到道路边界的距离
