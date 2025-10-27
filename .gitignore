@@ -1,0 +1,13 @@
+__pycache__/*
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+.env/
+build/
+dist/
+*.pkl
+data/**
+stereo_env/**
+

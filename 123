@@ -1,0 +1,301 @@
+import pygame
+import numpy as np
+import cv2
+from typing import Tuple, Dict, Any
+
+class CarEnvironment:
+    def __init__(self, render_mode="human"):
+        pygame.init()
+        self.width, self.height = 800, 600
+        self.screen = pygame.display.set_mode((self.width, self.height))
+        pygame.display.set_caption("Imitation Learning - Self Driving Car")
+        self.clock = pygame.time.Clock()
+        self.render_mode = render_mode
+        
+        # 汽车参数
+        self.car_x, self.car_y = 100, 300
+        self.car_width, self.car_height = 40, 20
+        self.car_speed = 4
+        self.car_angle = 0  # 角度，0表示向右
+        
+        # 道路参数
+        self.road_width = 400
+        self.road_y = 300
+        self.road_left = 200
+        self.road_right = 600
+        
+        # 轨迹记录
+        self.trajectory = []
+        
+        # 障碍物
+        self.obstacles = [
+            {'x': 400, 'y': 280, 'width': 30, 'height': 40},
+            {'x': 500, 'y': 320, 'width': 30, 'height': 40}
+        ]
+        
+        self.reset()
+    
+    def reset(self) -> np.ndarray:
+        """重置环境"""
+        self.car_x, self.car_y = 100, 300
+        self.car_angle = 0
+        self.trajectory = []
+        return self.get_state()
+    
+    def get_state(self) -> np.ndarray:
+        """获取状态向量"""
+        # 计算到道路边界的距离
+        dist_to_left = self.car_x - self.road_left
+        dist_to_right = self.road_right - self.car_x
+        dist_to_center = abs(self.car_y - self.road_y)
+        
+        # 计算到最近障碍物的距离
+        min_obstacle_dist = float('inf')
+        for obstacle in self.obstacles:
+            dx = obstacle['x'] - self.car_x
+            dy = obstacle['y'] - self.car_y
+            dist = np.sqrt(dx**2 + dy**2)
+            min_obstacle_dist = min(min_obstacle_dist, dist)
+        
+        state = np.array([
+            self.car_x / self.width,                    # 归一化x坐标
+            self.car_y / self.height,                   # 归一化y坐标
+            dist_to_left / self.road_width,            # 到左边界的距离
+            dist_to_right / self.road_width,           # 到右边界的距离
+            dist_to_center / 100,                      # 到道路中心的距离
+            min_obstacle_dist / 500,                   # 到最近障碍物的距离
+            self.car_angle / 360                       # 汽车角度
+        ], dtype=np.float32)
+        
+        return state
+    
+    def get_pixel_state(self) -> np.ndarray:
+        """获取像素状态（用于图像输入）"""
+        # 创建一个小的渲染表面
+        surface = pygame.Surface((84, 84))
+        surface.fill((255, 255, 255))
+        
+        # 绘制道路
+        road_rect = pygame.Rect(
+            int((self.road_left - self.car_x + 42) * 0.5),
+            int((self.road_y - 50 - self.car_y + 42) * 0.5),
+            int(self.road_width * 0.5),
+            100
+        )
+        pygame.draw.rect(surface, (100, 100, 100), road_rect)
+        
+        # 绘制汽车（在中心）
+        car_rect = pygame.Rect(40, 40, 4, 2)
+        pygame.draw.rect(surface, (255, 0, 0), car_rect)
+        
+        # 转换为numpy数组
+        pixel_array = pygame.surfarray.array3d(surface)
+        pixel_array = np.transpose(pixel_array, (1, 0, 2))  # 转置为(H, W, C)
+        pixel_array = cv2.cvtColor(pixel_array, cv2.COLOR_RGB2GRAY)  # 转为灰度
+        
+        return pixel_array / 255.0  # 归一化
+    
+    def get_human_action(self) -> int:
+        """
+        读取键盘并返回动作:
+         0 = 左转 (A 或 ←)
+         1 = 直行 (默认)
+         2 = 右转 (D 或 →)
+        该函数会处理事件队列中的 QUIT / ESC 并支持长按。
+        """
+        # 先处理窗口关闭 / ESC 等一次性事件
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return -1  # 特殊值表示退出
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return -1
+
+        # 使用 get_pressed 支持长按
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            return 0
+        elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            return 2
+        else:
+            return 1
+    
+    def collect_human_demonstration(self, max_steps=1000):
+        """
+        收集人类示范数据的主循环
+        返回: (states, actions, rewards, dones)
+        """
+        self.reset()
+        states = []
+        actions = []
+        rewards = []
+        dones = []
+        
+        print("开始收集人类示范数据...")
+        print("控制说明: A/←键左转, D/→键右转, 其他键直行")
+        print("按ESC退出数据收集")
+        
+        step = 0
+        while step < max_steps:
+            # 获取人类动作
+            action = self.get_human_action()
+            
+            if action == -1:  # 退出信号
+                print("用户退出数据收集")
+                break
+            
+            # 执行动作
+            next_state, reward, done, _ = self.step(action)
+            
+            # 保存数据
+            states.append(self.get_state().copy())
+            actions.append(action)
+            rewards.append(reward)
+            dones.append(done)
+            
+            # 渲染
+            self.render()
+            
+            # 检查是否结束
+            if done:
+                print(f"Episode 结束! 步数: {step}, 总奖励: {sum(rewards):.2f}")
+                break
+            
+            step += 1
+        
+        return states, actions, rewards, dones
+    
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict]:
+        """执行动作"""
+        # 动作: 0-左转, 1-保持直行, 2-右转
+        if action == 0:  # 左转
+            self.car_angle = (self.car_angle - 5) % 360
+        elif action == 2:  # 右转
+            self.car_angle = (self.car_angle + 5) % 360
+        
+        # 根据角度移动
+        rad = np.radians(self.car_angle)
+        self.car_x += self.car_speed * np.cos(rad)
+        self.car_y += self.car_speed * np.sin(rad)
+        
+        # 限制在屏幕内
+        self.car_x = max(0, min(self.car_x, self.width))
+        self.car_y = max(0, min(self.car_y, self.height))
+        
+        # 记录轨迹
+        self.trajectory.append((self.car_x, self.car_y))
+        if len(self.trajectory) > 100:  # 只保留最近100个点
+            self.trajectory.pop(0)
+        
+        # 计算奖励
+        reward = self._calculate_reward()
+        
+        # 检查是否结束
+        done = self._check_done()
+        
+        return self.get_state(), reward, done, {}
+    
+    def _calculate_reward(self) -> float:
+        """计算奖励"""
+        reward = 0.1  # 生存奖励
+        
+        # 保持在道路内的奖励
+        if self.road_left < self.car_x < self.road_right:
+            reward += 0.5
+        else:
+            reward -= 0.3
+        
+        # 保持在道路中心线的奖励
+        center_dist = abs(self.car_y - self.road_y)
+        if center_dist < 20:
+            reward += 0.2
+        
+        # 避免障碍物的惩罚
+        for obstacle in self.obstacles:
+            if (abs(self.car_x - obstacle['x']) < 30 and 
+                abs(self.car_y - obstacle['y']) < 30):
+                reward -= 1.0
+        
+        # 前进的奖励
+        reward += (self.car_x - 100) / 1000
+        
+        return reward
+    
+    def _check_done(self) -> bool:
+        """检查是否结束"""
+        # 检查是否出界
+        if (self.car_x < 50 or self.car_x > self.width - 50 or 
+            self.car_y < 50 or self.car_y > self.height - 50):
+            return True
+        
+        # 检查碰撞障碍物
+        for obstacle in self.obstacles:
+            if (abs(self.car_x - obstacle['x']) < 25 and 
+                abs(self.car_y - obstacle['y']) < 25):
+                return True
+        
+        # 最大步数
+        if len(self.trajectory) > 1000:
+            return True
+        
+        return False
+    
+    def render(self):
+        """渲染环境"""
+        self.screen.fill((255, 255, 255))  # 白色背景
+        
+        # 绘制道路
+        pygame.draw.rect(self.screen, (100, 100, 100), 
+                        (self.road_left, self.road_y - 50, 
+                         self.road_width, 100))
+        
+        # 绘制道路中心线
+        for i in range(self.road_left, self.road_right, 40):
+            pygame.draw.rect(self.screen, (255, 255, 0), 
+                           (i, self.road_y - 2, 20, 4))
+        
+        # 绘制障碍物
+        for obstacle in self.obstacles:
+            pygame.draw.rect(self.screen, (0, 0, 255), 
+                           (obstacle['x'], obstacle['y'], 
+                            obstacle['width'], obstacle['height']))
+        
+        # 绘制轨迹
+        if len(self.trajectory) > 1:
+            pygame.draw.lines(self.screen, (0, 255, 0), False, self.trajectory, 2)
+        
+        # 绘制汽车（带方向）
+        car_rect = pygame.Rect(self.car_x - self.car_width//2, 
+                              self.car_y - self.car_height//2,
+                              self.car_width, self.car_height)
+        
+        # 创建旋转的汽车表面
+        car_surface = pygame.Surface((self.car_width, self.car_height), pygame.SRCALPHA)
+        pygame.draw.rect(car_surface, (255, 0, 0), (0, 0, self.car_width, self.car_height))
+        
+        # 绘制方向指示器
+        pygame.draw.rect(car_surface, (0, 0, 0), 
+                        (self.car_width - 5, self.car_height//2 - 2, 5, 4))
+        
+        # 旋转汽车
+        rotated_car = pygame.transform.rotate(car_surface, -self.car_angle)
+        rotated_rect = rotated_car.get_rect(center=car_rect.center)
+        
+        self.screen.blit(rotated_car, rotated_rect.topleft)
+        
+        # 显示信息
+        font = pygame.font.Font(None, 36)
+        info_text = f"Position: ({int(self.car_x)}, {int(self.car_y)}) Angle: {int(self.car_angle)}"
+        text_surface = font.render(info_text, True, (0, 0, 0))
+        self.screen.blit(text_surface, (10, 10))
+        
+        # 显示控制说明
+        control_text = "控制: A/←左转, D/→右转, ESC退出"
+        control_surface = font.render(control_text, True, (0, 0, 0))
+        self.screen.blit(control_surface, (10, 50))
+        
+        pygame.display.flip()
+        self.clock.tick(60)
+    
+    def close(self):
+        """关闭环境"""
+        pygame.quit()
