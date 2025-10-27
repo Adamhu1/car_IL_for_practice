@@ -5,7 +5,16 @@ import random  # 新增
 from typing import Tuple, Dict, Any
 
 class CarEnvironment:
-    def __init__(self, render_mode="human"):
+    def __init__(self, render_mode="human",
+                 randomize: bool = True,        # 重置时是否随机
+                 seed: int | None = None,
+                 road_width_range=(260, 520),   # 道路宽度范围
+                 road_y_margin=120,             # 道路中心线距离上下边界的最小边距
+                 start_x_offset=(40, 120),      # 起点距离左侧车道边的偏移范围
+                 start_y_jitter=(-60, 60),      # 起点在道路中心线的上下抖动范围
+                 start_angle_range=(-25, 25),   # 起始朝向角度范围（度）
+                 obstacle_count_range=(1, 4)    # 障碍物数量范围
+                 ):
         pygame.init()
         self.width, self.height = 800, 600
         self.screen = pygame.display.set_mode((self.width, self.height))
