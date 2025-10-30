@@ -107,7 +107,7 @@ def train(epoch):
     correct = 0
     total = 0
 
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target) in enumerate(train_loader):#相当于for data in data_loader:
         data, target = data.to(device), target.to(device)  # 转移到GPU
 
         optimizer.zero_grad()             # 梯度清零

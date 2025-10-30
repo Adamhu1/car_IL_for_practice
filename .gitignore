@@ -10,4 +10,4 @@ dist/
 *.pkl
 data/**
 stereo_env/**
-
+mp4*
