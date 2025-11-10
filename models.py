@@ -93,11 +93,11 @@ class EnsembleModel(nn.Module):
         )
     
     def forward(self, state, image):
-        # 处理图像
+        # 处理图像，定义图像分支的卷积层和激活
         image_features = self.image_branch(image)
         image_features = image_features.view(image_features.size(0), -1)
         
-        # 处理状态向量
+        # 处理状态向量，定义状态向量分支的全连接层。
         state_features = self.state_branch(state)
         
         # 融合特征

@@ -30,7 +30,7 @@ class DataCollector:
         
         running = True
         while running and steps < max_steps:
-            pygame.event.pump()
+            pygame.event.pump() #处理pygame内部事件队列，让pygame能够响应系统级事件，保持窗口响应性。如果没有这个调用，窗口可能会变成"无响应"状态
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -48,7 +48,23 @@ class DataCollector:
                 action = 2
             else:  # 直行
                 action = 1
-            
+# #pygame.key.get_pressed()这是一个系统自带的函数吗            
+# 是的，pygame.key.get_pressed() 是pygame库自带的系统函数。
+# 来源: pygame.key模块（pygame官方库的一部分） 功能: 获取当前键盘上所有按键的状态 返回值: 一个包含所有键盘按键状态的序列（类似列表或数组）
+# 每个元素对应一个特定的按键
+# 如果该键当前被按下，对应位置为True
+# 如果该键未被按下，对应位置为False
+
+# keys = pygame.key.get_pressed()  # 获取所有按键状态
+
+# if keys[pygame.K_LEFT]:          # 检查左箭头键
+#     print("左箭头键被按下")
+    
+# if keys[pygame.K_SPACE]:         # 检查空格键
+#     print("空格键被按下")
+
+
+
             # 执行动作
             next_state, reward, done, _ = self.env.step(action)
             pixel_state = self.env.get_pixel_state()
